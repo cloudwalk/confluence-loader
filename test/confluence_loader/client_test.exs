@@ -46,7 +46,9 @@ defmodule ConfluenceLoader.ClientTest do
                end)
 
         assert conn.req_headers
-               |> Enum.any?(fn {k, v} -> k == "accept" && v == "application/json; charset=utf-8" end)
+               |> Enum.any?(fn {k, v} ->
+                 k == "accept" && v == "application/json; charset=utf-8"
+               end)
 
         conn
         |> Plug.Conn.put_resp_content_type("application/json")

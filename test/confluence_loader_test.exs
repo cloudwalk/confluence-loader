@@ -239,13 +239,16 @@ defmodule ConfluenceLoaderTest do
           }))
       end)
 
-      assert {:ok, documents} = ConfluenceLoader.load_documents_since(client, space_key, timestamp)
+      assert {:ok, documents} =
+               ConfluenceLoader.load_documents_since(client, space_key, timestamp)
+
       assert length(documents) == 1
       assert hd(documents).id == "999"
     end
 
     test "delegates error handling", %{client: client} do
-      assert {:error, :invalid_timestamp} = ConfluenceLoader.load_documents_since(client, "SPACE", "invalid")
+      assert {:error, :invalid_timestamp} =
+               ConfluenceLoader.load_documents_since(client, "SPACE", "invalid")
     end
   end
 

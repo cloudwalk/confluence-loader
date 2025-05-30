@@ -181,7 +181,6 @@ defmodule ConfluenceLoader.Pages do
   def load_documents_since(%Client{} = client, space_key, since_timestamp, params \\ %{}) do
     with {:ok, since_datetime} <- parse_timestamp(since_timestamp),
          {:ok, all_documents} <- load_space_documents(client, space_key, params) do
-
       filtered_documents =
         all_documents
         |> Enum.filter(&created_at_or_after?(&1, since_datetime))
@@ -299,6 +298,7 @@ defmodule ConfluenceLoader.Pages do
   defp transform_param({key, value}),
     do: {to_string(key), to_string(value)}
 
+  @spec get_space_by_key(Client.t(), String.t()) :: {:ok, map()} | {:error, term()}
   defp get_space_by_key(client, space_key) do
     case Client.get(client, "/spaces", [{"keys", space_key}, {"limit", "1"}]) do
       {:ok, %{"results" => [space | _]}} ->
@@ -307,8 +307,11 @@ defmodule ConfluenceLoader.Pages do
       {:ok, %{"results" => []}} ->
         {:error, {:not_found, "Space with key '#{space_key}' not found"}}
 
-      error ->
+      {:error, _} = error ->
         error
+
+      unexpected ->
+        {:error, {:invalid_response, unexpected}}
     end
   end
 
@@ -503,6 +506,7 @@ defmodule ConfluenceLoader.Pages do
       case Integer.parse(code_str) do
         {code, ""} when code > 0 and code < 1_114_112 ->
           <<code::utf8>>
+
         _ ->
           "&##{code_str};"
       end
@@ -535,8 +539,8 @@ defmodule ConfluenceLoader.Pages do
 
   defp extract_created_at(metadata) do
     get_in(metadata, [:version, "createdAt"]) ||
-    get_in(metadata, ["version", "createdAt"]) ||
-    get_in(metadata, [:version, :createdAt])
+      get_in(metadata, ["version", "createdAt"]) ||
+      get_in(metadata, [:version, :createdAt])
   end
 
   # Private helper functions for streaming
@@ -552,12 +556,15 @@ defmodule ConfluenceLoader.Pages do
           buffer: [],
           finished: false
         }
+
       {:error, _} = error ->
         %{error: error, finished: true}
     end
   end
 
-  defp fetch_more_documents(%{client: client, space_id: space_id, params: params, cursor: cursor} = state) do
+  defp fetch_more_documents(
+         %{client: client, space_id: space_id, params: params, cursor: cursor} = state
+       ) do
     request_params = if cursor, do: Map.put(params, :cursor, cursor), else: params
 
     case get_pages_in_space(client, space_id, request_params) do
@@ -567,9 +574,11 @@ defmodule ConfluenceLoader.Pages do
 
         # Don't fetch bodies yet - just store page metadata
         new_buffer = state.buffer ++ results
-        next_cursor = if Map.has_key?(links, "next"),
-                        do: extract_cursor_from_url(links["next"]),
-                        else: nil
+
+        next_cursor =
+          if Map.has_key?(links, "next"),
+            do: extract_cursor_from_url(links["next"]),
+            else: nil
 
         finished = is_nil(next_cursor)
 
@@ -605,14 +614,16 @@ defmodule ConfluenceLoader.Pages do
   defp fetch_next_batch(%{error: error, finished: true}), do: {:halt, error}
   defp fetch_next_batch(%{finished: true}), do: {:halt, nil}
 
-  defp fetch_next_batch(%{buffer: buffer, client: client, params: params} = state) when length(buffer) >= 4 do
+  defp fetch_next_batch(%{buffer: buffer, client: client, params: params} = state)
+       when length(buffer) >= 4 do
     {batch_pages, remaining} = Enum.split(buffer, 4)
     # Fetch bodies only for this batch
     batch_documents = fetch_batch_bodies(client, batch_pages, params)
     {[batch_documents], %{state | buffer: remaining}}
   end
 
-  defp fetch_next_batch(%{buffer: buffer, finished: true, client: client, params: params} = state) when buffer != [] do
+  defp fetch_next_batch(%{buffer: buffer, finished: true, client: client, params: params} = state)
+       when buffer != [] do
     # Yield remaining items when finished but buffer has items
     batch_documents = fetch_batch_bodies(client, buffer, params)
     {[batch_documents], %{state | buffer: []}}

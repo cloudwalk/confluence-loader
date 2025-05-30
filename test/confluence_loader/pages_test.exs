@@ -448,14 +448,18 @@ defmodule ConfluenceLoader.PagesTest do
     end
 
     test "load_documents_since with invalid timestamp string", %{client: client} do
-      assert {:error, :invalid_timestamp} = Pages.load_documents_since(client, "SPACE", "invalid-date")
+      assert {:error, :invalid_timestamp} =
+               Pages.load_documents_since(client, "SPACE", "invalid-date")
     end
 
     test "load_documents_since with invalid timestamp type", %{client: client} do
       assert {:error, :invalid_timestamp} = Pages.load_documents_since(client, "SPACE", 12345)
     end
 
-    test "load_documents_since filters out pages without version.createdAt", %{bypass: bypass, client: client} do
+    test "load_documents_since filters out pages without version.createdAt", %{
+      bypass: bypass,
+      client: client
+    } do
       space_key = "FILTER"
       space_id = "88888"
 
@@ -499,11 +503,16 @@ defmodule ConfluenceLoader.PagesTest do
           }))
       end)
 
-      assert {:ok, documents} = Pages.load_documents_since(client, space_key, "2024-01-01T00:00:00Z")
+      assert {:ok, documents} =
+               Pages.load_documents_since(client, space_key, "2024-01-01T00:00:00Z")
+
       assert length(documents) == 0
     end
 
-    test "load_documents_since filters out pages with invalid createdAt format", %{bypass: bypass, client: client} do
+    test "load_documents_since filters out pages with invalid createdAt format", %{
+      bypass: bypass,
+      client: client
+    } do
       space_key = "INVALID"
       space_id = "77777"
 
@@ -547,7 +556,9 @@ defmodule ConfluenceLoader.PagesTest do
           }))
       end)
 
-      assert {:ok, documents} = Pages.load_documents_since(client, space_key, "2024-01-01T00:00:00Z")
+      assert {:ok, documents} =
+               Pages.load_documents_since(client, space_key, "2024-01-01T00:00:00Z")
+
       assert length(documents) == 0
     end
 
@@ -562,7 +573,7 @@ defmodule ConfluenceLoader.PagesTest do
       end)
 
       assert {:error, {:not_found, "Space with key 'NOTFOUND' not found"}} =
-        Pages.load_documents_since(client, space_key, "2024-01-01T00:00:00Z")
+               Pages.load_documents_since(client, space_key, "2024-01-01T00:00:00Z")
     end
 
     test "load_documents_since with numeric space ID", %{bypass: bypass, client: client} do
@@ -597,7 +608,9 @@ defmodule ConfluenceLoader.PagesTest do
           }))
       end)
 
-      assert {:ok, documents} = Pages.load_documents_since(client, space_id, "2024-01-01T00:00:00Z")
+      assert {:ok, documents} =
+               Pages.load_documents_since(client, space_id, "2024-01-01T00:00:00Z")
+
       assert length(documents) == 1
       assert hd(documents).id == "333"
     end
@@ -790,7 +803,8 @@ defmodule ConfluenceLoader.PagesTest do
         "title" => "Edge Cases",
         "body" => %{
           "storage" => %{
-            "value" => "<script>alert('test')</script><style>body{color:red}</style><p>Clean text</p>"
+            "value" =>
+              "<script>alert('test')</script><style>body{color:red}</style><p>Clean text</p>"
           }
         }
       }
