@@ -149,7 +149,7 @@ if space_key != "" do
 
   IO.puts("Loading documents from space '#{space_key}' created since #{DateTime.to_date(thirty_days_ago)}...")
 
-  case ConfluenceLoader.load_documents_since(client, space_key, thirty_days_ago) do
+  case ConfluenceLoader.load_documents_since(client, space_key, thirty_days_ago, %{limit: 15}) do
     {:ok, documents} ->
       IO.puts("✅ Found #{length(documents)} documents created in the last 30 days")
 
@@ -188,47 +188,55 @@ end
 
 IO.puts("\n")
 
-# Example 7: Stream processing documents in batches of 4
-IO.puts("=== Example 7: Stream processing documents in batches of 4 ===")
+# Example 8: Stream processing documents in batches of 4 using the native streaming function
+IO.puts("=== Example 8: Stream processing with native streaming function ===")
 IO.puts("Enter a space key (e.g., PROJ, TEAM) or press Enter to skip: ")
 space_key = IO.gets("") |> String.trim()
 
 if space_key != "" do
-  case ConfluenceLoader.load_space_documents(client, space_key, %{limit: 20}) do
-    {:ok, documents} ->
-      IO.puts("✅ Processing #{length(documents)} documents in batches of 4...")
+  IO.puts("✅ Streaming documents from space '#{space_key}' in batches of 4...")
 
-      # Method 1: Simple streaming with Enum.chunk_every
-      documents
-      |> Enum.chunk_every(4)
-      |> Enum.with_index(1)
-      |> Enum.each(fn {batch, index} ->
-        IO.puts("\n--- Batch #{index} (#{length(batch)} documents) ---")
-        Enum.each(batch, fn doc ->
-          IO.puts("  - #{doc.metadata.title} (#{String.length(doc.text)} chars)")
-        end)
-
-        # Simulate processing time
-        Process.sleep(100)
+  try do
+    client
+    |> ConfluenceLoader.stream_space_documents(space_key, %{})
+    |> Enum.with_index(1)
+    |> Enum.each(fn {batch, batch_number} ->
+      IO.puts("\n--- Batch #{batch_number} (#{length(batch)} documents) ---")
+      Enum.each(batch, fn doc ->
+        IO.puts("  - #{doc.metadata.title} (#{String.length(doc.text)} chars)")
       end)
 
-      # Method 2: Async processing with Task.async_stream
-      IO.puts("\n--- Async processing with Task.async_stream ---")
-      documents
-      |> Stream.chunk_every(4)
+      # Simulate processing time
+      Process.sleep(200)
+    end)
+
+    IO.puts("\n✅ Streaming completed successfully!")
+
+    # Example with async processing using Task.async_stream
+    IO.puts("\n--- Async streaming with Task.async_stream ---")
+    results =
+      client
+      |> ConfluenceLoader.stream_space_documents(space_key, %{})
       |> Task.async_stream(fn batch ->
         # Process each batch concurrently
         batch_size = length(batch)
         total_chars = batch |> Enum.map(fn doc -> String.length(doc.text) end) |> Enum.sum()
+        Process.sleep(100)  # Simulate processing time
         {batch_size, total_chars}
-      end, max_concurrency: 2, timeout: 10_000)
+      end, max_concurrency: 2, timeout: 30_000)
       |> Enum.with_index(1)
-      |> Enum.each(fn {{:ok, {batch_size, total_chars}}, index} ->
-        IO.puts("Processed batch #{index}: #{batch_size} docs, #{total_chars} total characters")
+      |> Enum.map(fn {{:ok, {batch_size, total_chars}}, index} ->
+        IO.puts("Async batch #{index}: #{batch_size} docs, #{total_chars} total characters")
+        {batch_size, total_chars}
       end)
 
-    {:error, reason} ->
-      IO.puts("✗ Error loading documents: #{inspect(reason)}")
+    total_docs = results |> Enum.map(&elem(&1, 0)) |> Enum.sum()
+    total_chars = results |> Enum.map(&elem(&1, 1)) |> Enum.sum()
+    IO.puts("Total processed: #{total_docs} documents, #{total_chars} characters")
+
+  rescue
+    error ->
+      IO.puts("✗ Error during streaming: #{inspect(error)}")
   end
 else
   IO.puts("Skipping streaming example...")

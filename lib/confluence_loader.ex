@@ -87,6 +87,30 @@ defmodule ConfluenceLoader do
   defdelegate load_documents_since(client, space_key, since_timestamp, params \\ %{}), to: Pages
 
   @doc """
+  Stream documents from a specific space in batches of 4.
+
+  This function returns a Stream that yields batches of 4 documents at a time
+  until all documents from the space have been processed. It's memory efficient
+  as it doesn't load all documents into memory at once.
+
+  ## Parameters
+    - client: The Confluence client
+    - space_key: The key of the space (e.g., "PROJ", "TEAM") or numeric space ID
+    - params: Optional parameters for filtering (body_format, etc.)
+
+  ## Examples
+      # Stream and process documents in batches of 4
+      client
+      |> ConfluenceLoader.stream_space_documents("PROJ")
+      |> Enum.each(fn batch ->
+        IO.puts("Processing batch of \#{length(batch)} documents")
+        Enum.each(batch, fn doc -> IO.puts("  - \#{doc.metadata.title}") end)
+      end)
+  """
+  @spec stream_space_documents(Client.t(), String.t() | integer(), map()) :: Enumerable.t()
+  defdelegate stream_space_documents(client, space_key, params \\ %{}), to: Pages
+
+  @doc """
   Get all pages with optional filtering.
 
   ## Parameters

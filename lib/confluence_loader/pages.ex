@@ -190,6 +190,47 @@ defmodule ConfluenceLoader.Pages do
     end
   end
 
+  @doc """
+  Stream documents from a specific space in batches of 4.
+
+  This function returns a Stream that yields batches of 4 documents at a time
+  until all documents from the space have been processed. It's memory efficient
+  as it doesn't load all documents into memory at once.
+
+  ## Parameters
+    - client: The Confluence client
+    - space_key: The key of the space (e.g., "PROJ", "TEAM") or numeric space ID
+    - params: Optional parameters for filtering (body_format, etc.)
+
+  ## Examples
+      # Stream and process documents in batches of 4
+      client
+      |> ConfluenceLoader.Pages.stream_space_documents("PROJ")
+      |> Enum.each(fn batch ->
+        IO.puts("Processing batch of \#{length(batch)} documents")
+        Enum.each(batch, fn doc -> IO.puts("  - \#{doc.metadata.title}") end)
+      end)
+
+      # With async processing using Task.async_stream
+      client
+      |> ConfluenceLoader.Pages.stream_space_documents("PROJ")
+      |> Task.async_stream(fn batch ->
+        # Process each batch concurrently
+        Enum.map(batch, &process_document/1)
+      end, max_concurrency: 2)
+      |> Enum.to_list()
+  """
+  @spec stream_space_documents(Client.t(), String.t() | integer(), map()) :: Enumerable.t()
+  def stream_space_documents(%Client{} = client, space_key, params \\ %{}) do
+    params_with_body = Map.put_new(params, :body_format, "storage")
+
+    Stream.resource(
+      fn -> initialize_stream_state(client, space_key, params_with_body) end,
+      &fetch_next_batch/1,
+      fn _ -> :ok end
+    )
+  end
+
   # Handle numeric space ID for documents
   defp handle_space_documents({space_id, ""}, client, params, total_limit, _original_key) do
     with {:ok, pages} <- get_all_space_pages_paginated(client, space_id, params, [], total_limit) do
@@ -472,6 +513,82 @@ defmodule ConfluenceLoader.Pages do
           _ -> false
         end
       _ -> false
+    end
+  end
+
+  # Private helper functions for streaming
+
+  defp initialize_stream_state(client, space_key, params) do
+    case resolve_space_id(client, space_key) do
+      {:ok, space_id} ->
+        %{
+          client: client,
+          space_id: space_id,
+          params: params,
+          cursor: nil,
+          buffer: [],
+          finished: false
+        }
+      {:error, _} = error ->
+        %{error: error, finished: true}
+    end
+  end
+
+  defp fetch_next_batch(%{error: error, finished: true}), do: {:halt, error}
+  defp fetch_next_batch(%{finished: true}), do: {:halt, nil}
+
+  defp fetch_next_batch(%{buffer: buffer} = state) when length(buffer) >= 4 do
+    {batch, remaining} = Enum.split(buffer, 4)
+    {[batch], %{state | buffer: remaining}}
+  end
+
+  defp fetch_next_batch(%{buffer: buffer, finished: true} = state) when buffer != [] do
+    # Yield remaining items when finished but buffer has items
+    {[buffer], %{state | buffer: []}}
+  end
+
+  defp fetch_next_batch(%{buffer: [], finished: true}), do: {:halt, nil}
+
+  defp fetch_next_batch(state) do
+    case fetch_more_documents(state) do
+      {:ok, new_state} -> fetch_next_batch(new_state)
+      {:error, _} = error -> {:halt, error}
+    end
+  end
+
+  defp fetch_more_documents(%{client: client, space_id: space_id, params: params, cursor: cursor} = state) do
+    request_params = if cursor, do: Map.put(params, :cursor, cursor), else: params
+
+    case get_pages_in_space(client, space_id, request_params) do
+      {:ok, response} ->
+        results = Map.get(response, "results", [])
+        links = Map.get(response, "_links", %{})
+
+        documents = fetch_pages_with_body(client, results, params)
+                   |> Enum.map(&page_to_document/1)
+
+        new_buffer = state.buffer ++ documents
+        next_cursor = if Map.has_key?(links, "next"),
+                        do: extract_cursor_from_url(links["next"]),
+                        else: nil
+
+        finished = is_nil(next_cursor)
+
+        {:ok, %{state | buffer: new_buffer, cursor: next_cursor, finished: finished}}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp resolve_space_id(client, space_key) do
+    case to_string(space_key) |> Integer.parse() do
+      {space_id, ""} -> {:ok, space_id}
+      _ ->
+        case get_space_by_key(client, space_key) do
+          {:ok, space} -> {:ok, space["id"]}
+          error -> error
+        end
     end
   end
 end

@@ -248,4 +248,43 @@ defmodule ConfluenceLoaderTest do
       assert {:error, :invalid_timestamp} = ConfluenceLoader.load_documents_since(client, "SPACE", "invalid")
     end
   end
+
+  describe "stream_space_documents/3" do
+    test "delegates to Pages.stream_space_documents and returns a Stream", %{client: client} do
+      # Test that it returns a Stream/function
+      stream = ConfluenceLoader.stream_space_documents(client, "TEST")
+      assert is_function(stream)
+    end
+
+    test "stream can be enumerated", %{bypass: bypass, client: client} do
+      space_key = "STREAM"
+      space_id = "88888"
+
+      # Space lookup
+      Bypass.expect_once(bypass, "GET", "/wiki/api/v2/spaces", fn conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(200, ~s({
+            "results": [
+              {"id": "#{space_id}", "key": "#{space_key}", "name": "Stream Space"}
+            ]
+          }))
+      end)
+
+      # Pages request - return empty to test edge case
+      Bypass.expect_once(bypass, "GET", "/wiki/api/v2/spaces/#{space_id}/pages", fn conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(200, ~s({
+            "results": []
+          }))
+      end)
+
+      stream = ConfluenceLoader.stream_space_documents(client, space_key)
+      result = Enum.to_list(stream)
+
+      # With no pages, stream should be empty
+      assert result == []
+    end
+  end
 end
