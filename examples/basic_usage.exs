@@ -189,7 +189,7 @@ end
 IO.puts("\n")
 
 # Example 8: Stream processing documents in batches of 4 using the native streaming function
-IO.puts("=== Example 8: Stream processing with native streaming function ===")
+IO.puts("=== Example 7: Stream processing with native streaming function ===")
 IO.puts("Enter a space key (e.g., PROJ, TEAM) or press Enter to skip: ")
 space_key = IO.gets("") |> String.trim()
 
@@ -205,9 +205,6 @@ if space_key != "" do
       Enum.each(batch, fn doc ->
         IO.puts("  - #{doc.metadata.title} (#{String.length(doc.text)} chars)")
       end)
-
-      # Simulate processing time
-      Process.sleep(200)
     end)
 
     IO.puts("\n✅ Streaming completed successfully!")
@@ -221,7 +218,6 @@ if space_key != "" do
         # Process each batch concurrently
         batch_size = length(batch)
         total_chars = batch |> Enum.map(fn doc -> String.length(doc.text) end) |> Enum.sum()
-        Process.sleep(100)  # Simulate processing time
         {batch_size, total_chars}
       end, max_concurrency: 2, timeout: 30_000)
       |> Enum.with_index(1)

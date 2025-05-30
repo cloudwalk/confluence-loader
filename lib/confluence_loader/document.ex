@@ -96,9 +96,11 @@ defmodule ConfluenceLoader.Document do
   # Private helper functions
 
   defp extract_field(map, field) when is_atom(field) do
-    case Map.get(map, field) || Map.get(map, to_string(field)) do
-      nil -> :error
-      value -> {:ok, value}
+    # Try atom key first, then string key
+    case {Map.get(map, field), Map.get(map, to_string(field))} do
+      {nil, nil} -> :error
+      {value, _} when not is_nil(value) -> {:ok, value}
+      {_, value} -> {:ok, value}
     end
   end
 

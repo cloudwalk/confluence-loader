@@ -363,18 +363,34 @@ defmodule ConfluenceLoader.Pages do
     results_with_body = fetch_pages_with_body(client, results, params)
     new_accumulated = accumulated ++ results_with_body
 
-    cond do
-      is_integer(total_limit) and length(new_accumulated) >= total_limit ->
-        {:ok, Enum.take(new_accumulated, total_limit)}
+    handle_pagination_logic(
+      {total_limit, new_accumulated, links},
+      {client, params, continue_fn}
+    )
+  end
 
-      Map.has_key?(links, "next") ->
-        cursor = extract_cursor_from_url(links["next"])
-        new_params = Map.put(params, :cursor, cursor)
-        continue_fn.(client, new_params, new_accumulated, total_limit)
+  # When limit is reached
+  defp handle_pagination_logic(
+         {total_limit, accumulated, _links},
+         _continuation_params
+       )
+       when is_integer(total_limit) and length(accumulated) >= total_limit do
+    {:ok, Enum.take(accumulated, total_limit)}
+  end
 
-      true ->
-        {:ok, new_accumulated}
-    end
+  # When there's a next page
+  defp handle_pagination_logic(
+         {total_limit, accumulated, %{"next" => next_url}},
+         {client, params, continue_fn}
+       ) do
+    cursor = extract_cursor_from_url(next_url)
+    new_params = Map.put(params, :cursor, cursor)
+    continue_fn.(client, new_params, accumulated, total_limit)
+  end
+
+  # When no more pages
+  defp handle_pagination_logic({_total_limit, accumulated, _links}, _continuation_params) do
+    {:ok, accumulated}
   end
 
   defp fetch_pages_with_body(client, pages, params) do
@@ -425,52 +441,61 @@ defmodule ConfluenceLoader.Pages do
     |> String.trim()
   end
 
+  @html_entities %{
+    # Basic HTML entities
+    "&nbsp;" => " ",
+    "&lt;" => "<",
+    "&gt;" => ">",
+    "&amp;" => "&",
+    "&quot;" => "\"",
+    "&#39;" => "'",
+    "&apos;" => "'",
+    # Portuguese characters
+    "&ccedil;" => "ç",
+    "&Ccedil;" => "Ç",
+    "&atilde;" => "ã",
+    "&Atilde;" => "Ã",
+    "&otilde;" => "õ",
+    "&Otilde;" => "Õ",
+    "&aacute;" => "á",
+    "&Aacute;" => "Á",
+    "&eacute;" => "é",
+    "&Eacute;" => "É",
+    "&iacute;" => "í",
+    "&Iacute;" => "Í",
+    "&oacute;" => "ó",
+    "&Oacute;" => "Ó",
+    "&uacute;" => "ú",
+    "&Uacute;" => "Ú",
+    "&agrave;" => "à",
+    "&Agrave;" => "À",
+    "&acirc;" => "â",
+    "&Acirc;" => "Â",
+    "&ecirc;" => "ê",
+    "&Ecirc;" => "Ê",
+    "&ocirc;" => "ô",
+    "&Ocirc;" => "Ô",
+    # Common typographic entities
+    "&mdash;" => "—",
+    "&ndash;" => "–",
+    "&hellip;" => "...",
+    "&euro;" => "€",
+    "&pound;" => "£",
+    "&copy;" => "©",
+    "&reg;" => "®",
+    "&trade;" => "™"
+  }
+
   defp decode_html_entities(text) do
     text
-    # Basic HTML entities that are structural, not encoding-related
-    |> String.replace(~r/&nbsp;/, " ")
-    |> String.replace(~r/&lt;/, "<")
-    |> String.replace(~r/&gt;/, ">")
-    |> String.replace(~r/&amp;/, "&")
-    |> String.replace(~r/&quot;/, "\"")
-    |> String.replace(~r/&#39;/, "'")
-    |> String.replace(~r/&apos;/, "'")
-    # Portuguese characters
-    |> String.replace(~r/&ccedil;/, "ç")
-    |> String.replace(~r/&Ccedil;/, "Ç")
-    |> String.replace(~r/&atilde;/, "ã")
-    |> String.replace(~r/&Atilde;/, "Ã")
-    |> String.replace(~r/&otilde;/, "õ")
-    |> String.replace(~r/&Otilde;/, "Õ")
-    |> String.replace(~r/&aacute;/, "á")
-    |> String.replace(~r/&Aacute;/, "Á")
-    |> String.replace(~r/&eacute;/, "é")
-    |> String.replace(~r/&Eacute;/, "É")
-    |> String.replace(~r/&iacute;/, "í")
-    |> String.replace(~r/&Iacute;/, "Í")
-    |> String.replace(~r/&oacute;/, "ó")
-    |> String.replace(~r/&Oacute;/, "Ó")
-    |> String.replace(~r/&uacute;/, "ú")
-    |> String.replace(~r/&Uacute;/, "Ú")
-    |> String.replace(~r/&agrave;/, "à")
-    |> String.replace(~r/&Agrave;/, "À")
-    |> String.replace(~r/&acirc;/, "â")
-    |> String.replace(~r/&Acirc;/, "Â")
-    |> String.replace(~r/&ecirc;/, "ê")
-    |> String.replace(~r/&Ecirc;/, "Ê")
-    |> String.replace(~r/&ocirc;/, "ô")
-    |> String.replace(~r/&Ocirc;/, "Ô")
-    # Common typographic entities
-    |> String.replace(~r/&mdash;/, "—")
-    |> String.replace(~r/&ndash;/, "–")
-    |> String.replace(~r/&hellip;/, "...")
-    |> String.replace(~r/&euro;/, "€")
-    |> String.replace(~r/&pound;/, "£")
-    |> String.replace(~r/&copy;/, "©")
-    |> String.replace(~r/&reg;/, "®")
-    |> String.replace(~r/&trade;/, "™")
-    # Generic numeric entity fallback
+    |> replace_named_entities()
     |> decode_numeric_entities()
+  end
+
+  defp replace_named_entities(text) do
+    Enum.reduce(@html_entities, text, fn {entity, replacement}, acc ->
+      String.replace(acc, entity, replacement)
+    end)
   end
 
   defp decode_numeric_entities(text) do
@@ -500,20 +525,18 @@ defmodule ConfluenceLoader.Pages do
   end
 
   defp created_at_or_after?(%Document{metadata: metadata}, since_datetime) do
-    # Try to get createdAt from version object (could be atom or string keys)
-    created_at_str = get_in(metadata, [:version, "createdAt"]) ||
-                     get_in(metadata, ["version", "createdAt"]) ||
-                     get_in(metadata, [:version, :createdAt])
-
-    case created_at_str do
-      nil -> false
-      created_at_str when is_binary(created_at_str) ->
-        case DateTime.from_iso8601(created_at_str) do
-          {:ok, created_at, _} -> DateTime.compare(created_at, since_datetime) != :lt
-          _ -> false
-        end
+    with created_at_str when is_binary(created_at_str) <- extract_created_at(metadata),
+         {:ok, created_at, _} <- DateTime.from_iso8601(created_at_str) do
+      DateTime.compare(created_at, since_datetime) != :lt
+    else
       _ -> false
     end
+  end
+
+  defp extract_created_at(metadata) do
+    get_in(metadata, [:version, "createdAt"]) ||
+    get_in(metadata, ["version", "createdAt"]) ||
+    get_in(metadata, [:version, :createdAt])
   end
 
   # Private helper functions for streaming
@@ -534,28 +557,6 @@ defmodule ConfluenceLoader.Pages do
     end
   end
 
-  defp fetch_next_batch(%{error: error, finished: true}), do: {:halt, error}
-  defp fetch_next_batch(%{finished: true}), do: {:halt, nil}
-
-  defp fetch_next_batch(%{buffer: buffer} = state) when length(buffer) >= 4 do
-    {batch, remaining} = Enum.split(buffer, 4)
-    {[batch], %{state | buffer: remaining}}
-  end
-
-  defp fetch_next_batch(%{buffer: buffer, finished: true} = state) when buffer != [] do
-    # Yield remaining items when finished but buffer has items
-    {[buffer], %{state | buffer: []}}
-  end
-
-  defp fetch_next_batch(%{buffer: [], finished: true}), do: {:halt, nil}
-
-  defp fetch_next_batch(state) do
-    case fetch_more_documents(state) do
-      {:ok, new_state} -> fetch_next_batch(new_state)
-      {:error, _} = error -> {:halt, error}
-    end
-  end
-
   defp fetch_more_documents(%{client: client, space_id: space_id, params: params, cursor: cursor} = state) do
     request_params = if cursor, do: Map.put(params, :cursor, cursor), else: params
 
@@ -564,10 +565,8 @@ defmodule ConfluenceLoader.Pages do
         results = Map.get(response, "results", [])
         links = Map.get(response, "_links", %{})
 
-        documents = fetch_pages_with_body(client, results, params)
-                   |> Enum.map(&page_to_document/1)
-
-        new_buffer = state.buffer ++ documents
+        # Don't fetch bodies yet - just store page metadata
+        new_buffer = state.buffer ++ results
         next_cursor = if Map.has_key?(links, "next"),
                         do: extract_cursor_from_url(links["next"]),
                         else: nil
@@ -581,14 +580,66 @@ defmodule ConfluenceLoader.Pages do
     end
   end
 
-  defp resolve_space_id(client, space_key) do
-    case to_string(space_key) |> Integer.parse() do
-      {space_id, ""} -> {:ok, space_id}
-      _ ->
-        case get_space_by_key(client, space_key) do
-          {:ok, space} -> {:ok, space["id"]}
-          error -> error
+  # New function to fetch bodies for a batch of pages
+  defp fetch_batch_bodies(client, pages, params) do
+    body_format = Map.get(params, :body_format, "storage")
+
+    pages
+    |> Task.async_stream(
+      fn page ->
+        case get_page(client, page["id"], %{body_format: body_format}) do
+          {:ok, full_page} -> page_to_document(full_page)
+          {:error, _} -> page_to_document(page)
         end
+      end,
+      max_concurrency: 4,
+      timeout: 30_000
+    )
+    |> Enum.map(fn
+      {:ok, doc} -> doc
+      {:exit, _} -> nil
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp fetch_next_batch(%{error: error, finished: true}), do: {:halt, error}
+  defp fetch_next_batch(%{finished: true}), do: {:halt, nil}
+
+  defp fetch_next_batch(%{buffer: buffer, client: client, params: params} = state) when length(buffer) >= 4 do
+    {batch_pages, remaining} = Enum.split(buffer, 4)
+    # Fetch bodies only for this batch
+    batch_documents = fetch_batch_bodies(client, batch_pages, params)
+    {[batch_documents], %{state | buffer: remaining}}
+  end
+
+  defp fetch_next_batch(%{buffer: buffer, finished: true, client: client, params: params} = state) when buffer != [] do
+    # Yield remaining items when finished but buffer has items
+    batch_documents = fetch_batch_bodies(client, buffer, params)
+    {[batch_documents], %{state | buffer: []}}
+  end
+
+  defp fetch_next_batch(%{buffer: [], finished: true}), do: {:halt, nil}
+
+  defp fetch_next_batch(state) do
+    case fetch_more_documents(state) do
+      {:ok, new_state} -> fetch_next_batch(new_state)
+      {:error, _} = error -> {:halt, error}
+    end
+  end
+
+  defp resolve_space_id(client, space_key) do
+    space_key
+    |> to_string()
+    |> Integer.parse()
+    |> handle_space_id_resolution(client, space_key)
+  end
+
+  defp handle_space_id_resolution({space_id, ""}, _client, _space_key), do: {:ok, space_id}
+
+  defp handle_space_id_resolution(_, client, space_key) do
+    case get_space_by_key(client, space_key) do
+      {:ok, space} -> {:ok, space["id"]}
+      error -> error
     end
   end
 end
