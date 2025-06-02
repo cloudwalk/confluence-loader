@@ -46,7 +46,7 @@ defmodule ConfluenceLoader.MixProject do
       name: "confluence_loader",
       licenses: ["MIT"],
       links: %{
-        "GitHub" => "https://github.com/yourusername/confluence_loader"
+        "GitHub" => "https://github.com/cloudwalk/confluence-loader"
       }
     ]
   end
