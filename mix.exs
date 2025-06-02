@@ -12,7 +12,8 @@ defmodule ConfluenceLoader.MixProject do
       package: package(),
       docs: docs(),
       test_coverage: [summary: [threshold: 85]],
-      name: "confluence_loader"
+      name: "confluence_loader",
+      source_url: "https://github.com/cloudwalk/confluence-loader"
     ]
   end
 
