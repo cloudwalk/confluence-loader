@@ -85,8 +85,8 @@ else
   ]
 
   v1_url = "#{confluence_url}/rest/api/content?limit=1"
-  case HTTPoison.get(v1_url, headers) do
-    {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+  case Req.get(v1_url, headers: headers) do
+    {:ok, %Req.Response{status: 200, body: body}} ->
       IO.puts("✓ REST API v1 is working at /rest/api/content")
       IO.puts("  However, this library requires API v2.")
       IO.puts("  You may need to upgrade your Confluence instance or use a different library.")

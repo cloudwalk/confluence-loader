@@ -95,23 +95,28 @@ defmodule ConfluenceLoader.Client do
   end
 
   defp execute_request(%{url: url, headers: headers, options: options}) do
-    HTTPoison.get(url, headers, options)
+    Req.get(url,
+      headers: headers,
+      params: options[:params],
+      receive_timeout: options[:timeout],
+      max_retries: 0
+    )
   end
 
-  defp handle_response({:ok, %HTTPoison.Response{status_code: status, body: body}})
+  defp handle_response({:ok, %Req.Response{status: status, body: body}})
        when status in 200..299 do
-    Jason.decode(body)
+    {:ok, body}
   end
 
-  defp handle_response({:ok, %HTTPoison.Response{status_code: status, body: body}}) do
-    with {:ok, error_body} <- Jason.decode(body) do
-      {:error, {:api_error, status, error_body}}
-    else
-      {:error, _} -> {:error, {:api_error, status, body}}
-    end
+  defp handle_response({:ok, %Req.Response{status: status, body: body}}) do
+    {:error, {:api_error, status, body}}
   end
 
-  defp handle_response({:error, %HTTPoison.Error{reason: reason}}) do
+  defp handle_response({:error, %Req.TransportError{reason: reason}}) do
+    {:error, {:http_error, reason}}
+  end
+
+  defp handle_response({:error, reason}) do
     {:error, {:http_error, reason}}
   end
 
@@ -133,7 +138,6 @@ defmodule ConfluenceLoader.Client do
   defp build_options(%__MODULE__{timeout: timeout}, params) do
     [
       timeout: timeout,
-      recv_timeout: timeout,
       params: params
     ]
   end
