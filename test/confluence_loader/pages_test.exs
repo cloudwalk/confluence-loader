@@ -268,6 +268,97 @@ defmodule ConfluenceLoader.PagesTest do
 
       Agent.stop(agent)
     end
+
+    test "filters pages by status", %{bypass: bypass, client: client} do
+      # First expect the list pages request with status filter
+      Bypass.expect_once(bypass, "GET", "/wiki/api/v2/pages", fn conn ->
+        query_params = URI.decode_query(conn.query_string)
+        assert query_params["status"] == "archived,current"
+
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(200, ~s({
+            "results": [
+              {
+                "id": "123",
+                "title": "Archived Page",
+                "spaceId": "SPACE1",
+                "status": "archived",
+                "createdAt": "2024-01-01T10:00:00Z",
+                "authorId": "user123"
+              }
+            ]
+          }))
+      end)
+
+      # Then expect the individual page fetch with body content
+      Bypass.expect_once(bypass, "GET", "/wiki/api/v2/pages/123", fn conn ->
+        query_params = URI.decode_query(conn.query_string)
+        assert query_params["body-format"] == "storage"
+
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(200, ~s({
+            "id": "123",
+            "title": "Archived Page",
+            "spaceId": "SPACE1",
+            "status": "archived",
+            "createdAt": "2024-01-01T10:00:00Z",
+            "authorId": "user123",
+            "body": {
+              "storage": {"value": "<p>Archived content</p>"}
+            }
+          }))
+      end)
+
+      assert {:ok, documents} = Pages.load_documents(client, %{status: ["archived", "current"]})
+      assert [doc] = documents
+      assert doc.id == "123"
+      assert doc.text == "Archived content"
+      assert doc.metadata.status == "archived"
+    end
+
+    test "defaults to current status when no status provided", %{bypass: bypass, client: client} do
+      # First expect the list pages request with default current status
+      Bypass.expect_once(bypass, "GET", "/wiki/api/v2/pages", fn conn ->
+        query_params = URI.decode_query(conn.query_string)
+        assert query_params["status"] == "current"
+
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(200, ~s({
+            "results": [
+              {
+                "id": "123",
+                "title": "Current Page",
+                "spaceId": "SPACE1",
+                "status": "current",
+                "createdAt": "2024-01-01T10:00:00Z",
+                "authorId": "user123"
+              }
+            ]
+          }))
+      end)
+
+      # Then expect the individual page fetch
+      Bypass.expect_once(bypass, "GET", "/wiki/api/v2/pages/123", fn conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(200, ~s({
+            "id": "123",
+            "title": "Current Page",
+            "status": "current",
+            "body": {
+              "storage": {"value": "<p>Current content</p>"}
+            }
+          }))
+      end)
+
+      # No status parameter provided - should default to ["current"]
+      assert {:ok, documents} = Pages.load_documents(client)
+      assert [doc] = documents
+      assert doc.metadata.status == "current"
+    end
   end
 
   describe "load_space_documents/3" do

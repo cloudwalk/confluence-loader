@@ -54,6 +54,21 @@ defmodule ConfluenceLoader do
   ## Parameters
     - client: The Confluence client
     - params: Optional filtering parameters
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:space_id` - List of space IDs to filter by
+      - `:limit` - Maximum number of documents to return
+      - `:body_format` - Format for page body (default: "storage")
+
+  ## Examples
+      # Load current pages only (default)
+      {:ok, documents} = ConfluenceLoader.load_documents(client)
+
+      # Load archived pages only
+      {:ok, documents} = ConfluenceLoader.load_documents(client, %{status: ["archived"]})
+
+      # Load current and deleted pages
+      {:ok, documents} = ConfluenceLoader.load_documents(client, %{status: ["current", "deleted"]})
   """
   @spec load_documents(Client.t(), map()) :: {:ok, list(Document.t())} | {:error, term()}
   defdelegate load_documents(client, params \\ %{}), to: Pages
@@ -65,6 +80,20 @@ defmodule ConfluenceLoader do
     - client: The Confluence client
     - space_key: The key of the space (e.g., "PROJ", "TEAM")
     - params: Optional filtering parameters
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:limit` - Maximum number of documents to return
+      - `:body_format` - Format for page body (default: "storage")
+
+  ## Examples
+      # Load current pages from space (default)
+      {:ok, documents} = ConfluenceLoader.load_space_documents(client, "PROJ")
+
+      # Load archived pages from space
+      {:ok, documents} = ConfluenceLoader.load_space_documents(client, "PROJ", %{status: ["archived"]})
+
+      # Load current and trashed pages from space
+      {:ok, documents} = ConfluenceLoader.load_space_documents(client, "PROJ", %{status: ["current", "trashed"]})
   """
   @spec load_space_documents(Client.t(), String.t() | integer(), map()) ::
           {:ok, list(Document.t())} | {:error, term()}
@@ -81,6 +110,17 @@ defmodule ConfluenceLoader do
     - space_key: The key of the space (e.g., "PROJ", "TEAM")
     - since_timestamp: DateTime struct or ISO 8601 string (e.g., "2024-01-01T00:00:00Z")
     - params: Optional filtering parameters
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:limit` - Maximum number of documents to return
+      - `:body_format` - Format for page body (default: "storage")
+
+  ## Examples
+      # Load current pages since timestamp (default)
+      {:ok, documents} = ConfluenceLoader.load_documents_since(client, "PROJ", "2024-01-01T00:00:00Z")
+
+      # Load archived and current pages since timestamp
+      {:ok, documents} = ConfluenceLoader.load_documents_since(client, "PROJ", "2024-01-01T00:00:00Z", %{status: ["current", "archived"]})
   """
   @spec load_documents_since(Client.t(), String.t() | integer(), DateTime.t() | String.t(), map()) ::
           {:ok, list(Document.t())} | {:error, term()}
@@ -97,15 +137,23 @@ defmodule ConfluenceLoader do
     - client: The Confluence client
     - space_key: The key of the space (e.g., "PROJ", "TEAM") or numeric space ID
     - params: Optional parameters for filtering (body_format, etc.)
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:body_format` - Format for page body (default: "storage")
 
   ## Examples
-      # Stream and process documents in batches of 4
+      # Stream and process current documents in batches of 4 (default)
       client
       |> ConfluenceLoader.stream_space_documents("PROJ")
       |> Enum.each(fn batch ->
         IO.puts("Processing batch of \#{length(batch)} documents")
         Enum.each(batch, fn doc -> IO.puts("  - \#{doc.metadata.title}") end)
       end)
+
+      # Stream archived documents only
+      client
+      |> ConfluenceLoader.stream_space_documents("PROJ", %{status: ["archived"]})
+      |> Enum.each(fn batch -> process_archived_documents(batch) end)
   """
   @spec stream_space_documents(Client.t(), String.t() | integer(), map()) :: Enumerable.t()
   defdelegate stream_space_documents(client, space_key, params \\ %{}), to: Pages
