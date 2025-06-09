@@ -114,16 +114,30 @@ defmodule ConfluenceLoader.Pages do
   ## Parameters
     - client: The Confluence client
     - params: Optional parameters for filtering pages
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:space_id` - List of space IDs to filter by
+      - `:limit` - Maximum number of documents to return
+      - `:body_format` - Format for page body (default: "storage")
 
   ## Examples
       iex> {:ok, documents} = ConfluenceLoader.Pages.load_documents(client, %{space_id: [123]})
+
+      # Load only archived pages
+      iex> {:ok, documents} = ConfluenceLoader.Pages.load_documents(client, %{status: ["archived"]})
+
+      # Load current and deleted pages
+      iex> {:ok, documents} = ConfluenceLoader.Pages.load_documents(client, %{status: ["current", "deleted"]})
   """
   @spec load_documents(Client.t(), map()) :: {:ok, list(Document.t())} | {:error, term()}
   def load_documents(%Client{} = client, params \\ %{}) do
     total_limit = Map.get(params, :limit)
-    params_with_body = Map.put_new(params, :body_format, "storage")
+    params_with_defaults =
+      params
+      |> Map.put_new(:status, ["current"])
+      |> Map.put_new(:body_format, "storage")
 
-    with {:ok, pages} <- get_all_pages_paginated(client, params_with_body, [], total_limit) do
+    with {:ok, pages} <- get_all_pages_paginated(client, params_with_defaults, [], total_limit) do
       documents = Enum.map(pages, &page_to_document/1)
       {:ok, documents}
     end
@@ -136,20 +150,33 @@ defmodule ConfluenceLoader.Pages do
     - client: The Confluence client
     - space_key: The key of the space (e.g., "PROJ", "TEAM") or numeric space ID
     - params: Optional parameters for filtering
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:limit` - Maximum number of documents to return
+      - `:body_format` - Format for page body (default: "storage")
 
   ## Examples
       iex> {:ok, documents} = ConfluenceLoader.Pages.load_space_documents(client, "PROJ")
+
+      # Load only archived pages from space
+      iex> {:ok, documents} = ConfluenceLoader.Pages.load_space_documents(client, "PROJ", %{status: ["archived"]})
+
+      # Load current and trashed pages from space
+      iex> {:ok, documents} = ConfluenceLoader.Pages.load_space_documents(client, "PROJ", %{status: ["current", "trashed"]})
   """
   @spec load_space_documents(Client.t(), String.t() | integer(), map()) ::
           {:ok, list(Document.t())} | {:error, term()}
   def load_space_documents(%Client{} = client, space_key, params \\ %{}) do
     total_limit = Map.get(params, :limit)
-    params_with_body = Map.put_new(params, :body_format, "storage")
+    params_with_defaults =
+      params
+      |> Map.put_new(:status, ["current"])
+      |> Map.put_new(:body_format, "storage")
 
     space_key
     |> to_string()
     |> Integer.parse()
-    |> handle_space_documents(client, params_with_body, total_limit, space_key)
+    |> handle_space_documents(client, params_with_defaults, total_limit, space_key)
   end
 
   @doc """
@@ -164,6 +191,10 @@ defmodule ConfluenceLoader.Pages do
     - space_key: The key of the space (e.g., "PROJ", "TEAM") or numeric space ID
     - since_timestamp: DateTime struct or ISO 8601 string (e.g., "2024-01-01T00:00:00Z")
     - params: Optional parameters for filtering (limit, body_format, etc.)
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:limit` - Maximum number of documents to return
+      - `:body_format` - Format for page body (default: "storage")
 
   ## Examples
       # Using DateTime
@@ -173,14 +204,16 @@ defmodule ConfluenceLoader.Pages do
       # Using ISO string
       {:ok, documents} = ConfluenceLoader.Pages.load_documents_since(client, "PROJ", "2024-01-01T00:00:00Z")
 
-      # With additional parameters
-      {:ok, documents} = ConfluenceLoader.Pages.load_documents_since(client, "PROJ", since_date, %{limit: 50})
+      # With additional parameters including status
+      {:ok, documents} = ConfluenceLoader.Pages.load_documents_since(client, "PROJ", since_date, %{limit: 50, status: ["current", "archived"]})
   """
   @spec load_documents_since(Client.t(), String.t() | integer(), DateTime.t() | String.t(), map()) ::
           {:ok, list(Document.t())} | {:error, term()}
   def load_documents_since(%Client{} = client, space_key, since_timestamp, params \\ %{}) do
+    params_with_defaults = Map.put_new(params, :status, ["current"])
+
     with {:ok, since_datetime} <- parse_timestamp(since_timestamp),
-         {:ok, all_documents} <- load_space_documents(client, space_key, params) do
+         {:ok, all_documents} <- load_space_documents(client, space_key, params_with_defaults) do
       filtered_documents =
         all_documents
         |> Enum.filter(&created_at_or_after?(&1, since_datetime))
@@ -200,6 +233,9 @@ defmodule ConfluenceLoader.Pages do
     - client: The Confluence client
     - space_key: The key of the space (e.g., "PROJ", "TEAM") or numeric space ID
     - params: Optional parameters for filtering (body_format, etc.)
+      - `:status` - List of page statuses to filter by. Default: `["current"]`
+        Valid values: `["current", "archived", "deleted", "trashed"]`
+      - `:body_format` - Format for page body (default: "storage")
 
   ## Examples
       # Stream and process documents in batches of 4
@@ -208,6 +244,14 @@ defmodule ConfluenceLoader.Pages do
       |> Enum.each(fn batch ->
         IO.puts("Processing batch of \#{length(batch)} documents")
         Enum.each(batch, fn doc -> IO.puts("  - \#{doc.metadata.title}") end)
+      end)
+
+      # Stream only archived documents
+      client
+      |> ConfluenceLoader.Pages.stream_space_documents("PROJ", %{status: ["archived"]})
+      |> Enum.each(fn batch ->
+        # Process each batch of archived documents
+        process_archived_batch(batch)
       end)
 
       # With async processing using Task.async_stream
@@ -221,10 +265,13 @@ defmodule ConfluenceLoader.Pages do
   """
   @spec stream_space_documents(Client.t(), String.t() | integer(), map()) :: Enumerable.t()
   def stream_space_documents(%Client{} = client, space_key, params \\ %{}) do
-    params_with_body = Map.put_new(params, :body_format, "storage")
+    params_with_defaults =
+      params
+      |> Map.put_new(:status, ["current"])
+      |> Map.put_new(:body_format, "storage")
 
     Stream.resource(
-      fn -> initialize_stream_state(client, space_key, params_with_body) end,
+      fn -> initialize_stream_state(client, space_key, params_with_defaults) end,
       &fetch_next_batch/1,
       fn _ -> :ok end
     )
@@ -291,6 +338,9 @@ defmodule ConfluenceLoader.Pages do
 
   defp transform_param({:space_id, values}) when is_list(values),
     do: {"space-id", Enum.join(values, ",")}
+
+  defp transform_param({:status, values}) when is_list(values),
+    do: {"status", Enum.join(values, ",")}
 
   defp transform_param({:body_format, value}),
     do: {"body-format", value}

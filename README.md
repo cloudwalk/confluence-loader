@@ -64,7 +64,7 @@ client = ConfluenceLoader.new_client(
 {:ok, documents} = ConfluenceLoader.load_documents(client, %{
   space_id: ["123", "456"],  # Multiple space IDs
   limit: 50,                 # Number of pages per request
-  status: "current",         # Page status
+  status: ["current"],       # Page status (default: ["current"])
   body_format: "storage"     # Format of the content body
 })
 
@@ -192,6 +192,45 @@ end
 
 # Use it
 {:ok, first_page} = ConfluenceLoader.get_pages(client, %{limit: 25})
+```
+
+### Status Filtering
+
+You can filter documents by their status. The library supports the following page statuses:
+
+- `current` - Published pages (default)
+- `archived` - Archived pages  
+- `deleted` - Deleted pages
+- `trashed` - Pages in trash
+
+```elixir
+# Load only current pages (default behavior)
+{:ok, documents} = ConfluenceLoader.load_documents(client)
+
+# Load only archived pages
+{:ok, documents} = ConfluenceLoader.load_documents(client, %{status: ["archived"]})
+
+# Load current and deleted pages
+{:ok, documents} = ConfluenceLoader.load_documents(client, %{status: ["current", "deleted"]})
+
+# Load from specific space with status filtering
+{:ok, documents} = ConfluenceLoader.load_space_documents(client, "PROJ", %{status: ["archived"]})
+
+# Load documents since timestamp with status filtering
+{:ok, documents} = ConfluenceLoader.load_documents_since(
+  client, 
+  "PROJ", 
+  "2024-01-01T00:00:00Z", 
+  %{status: ["current", "archived"]}
+)
+
+# Stream documents with status filtering
+client
+|> ConfluenceLoader.stream_space_documents("PROJ", %{status: ["current"]})
+|> Enum.each(fn batch ->
+  # Process batch of current documents
+  process_documents(batch)
+end)
 ```
 
 ## Testing

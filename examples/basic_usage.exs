@@ -110,8 +110,55 @@ end
 
 IO.puts("\n")
 
-# Example 5: Get specific page by ID and format for LLM
-IO.puts("=== Example 5: Get specific page by ID and format for LLM ===")
+# Example 5: Load documents by status
+IO.puts("=== Example 5: Load documents by status ===")
+IO.puts("Enter a space key (e.g., PROJ, TEAM) or press Enter to skip: ")
+space_key = IO.gets("") |> String.trim()
+
+if space_key != "" do
+  IO.puts("\nLoading current pages (default)...")
+  case ConfluenceLoader.load_space_documents(client, space_key, %{limit: 2}) do
+    {:ok, documents} ->
+      IO.puts("Found #{length(documents)} current pages")
+      Enum.each(documents, fn doc ->
+        IO.puts("- #{doc.metadata.title} (status: #{doc.metadata.status})")
+      end)
+
+    {:error, reason} ->
+      IO.puts("Error loading current documents: #{inspect(reason)}")
+  end
+
+  IO.puts("\nLoading archived pages...")
+  case ConfluenceLoader.load_space_documents(client, space_key, %{status: ["archived"], limit: 2}) do
+    {:ok, documents} ->
+      IO.puts("Found #{length(documents)} archived pages")
+      Enum.each(documents, fn doc ->
+        IO.puts("- #{doc.metadata.title} (status: #{doc.metadata.status})")
+      end)
+
+    {:error, reason} ->
+      IO.puts("Error loading archived documents: #{inspect(reason)}")
+  end
+
+  IO.puts("\nLoading current and deleted pages...")
+  case ConfluenceLoader.load_space_documents(client, space_key, %{status: ["current", "deleted"], limit: 3}) do
+    {:ok, documents} ->
+      IO.puts("Found #{length(documents)} pages (current + deleted)")
+      Enum.each(documents, fn doc ->
+        IO.puts("- #{doc.metadata.title} (status: #{doc.metadata.status})")
+      end)
+
+    {:error, reason} ->
+      IO.puts("Error loading mixed status documents: #{inspect(reason)}")
+  end
+else
+  IO.puts("Skipping status filtering example...")
+end
+
+IO.puts("\n")
+
+# Example 6: Get specific page by ID and format for LLM
+IO.puts("=== Example 6: Get specific page by ID and format for LLM ===")
 IO.puts("Enter a page ID or press Enter to skip: ")
 page_id = IO.gets("") |> String.trim()
 
@@ -138,8 +185,8 @@ end
 
 IO.puts("\n")
 
-# Example 6: Load documents since a specific timestamp
-IO.puts("=== Example 6: Load documents since a specific timestamp ===")
+# Example 7: Load documents since a specific timestamp
+IO.puts("=== Example 7: Load documents since a specific timestamp ===")
 IO.puts("Enter a space key (e.g., PROJ, TEAM) or press Enter to skip: ")
 space_key = IO.gets("") |> String.trim()
 
@@ -189,7 +236,7 @@ end
 IO.puts("\n")
 
 # Example 8: Stream processing documents in batches of 4 using the native streaming function
-IO.puts("=== Example 7: Stream processing with native streaming function ===")
+IO.puts("=== Example 8: Stream processing with native streaming function ===")
 IO.puts("Enter a space key (e.g., PROJ, TEAM) or press Enter to skip: ")
 space_key = IO.gets("") |> String.trim()
 
